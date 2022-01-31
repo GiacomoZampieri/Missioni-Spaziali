@@ -18,7 +18,7 @@ GlobalSpace = GlobalSpace %>%
 
 View(GlobalSpace)
 
-#### Quali sono gli Stati che hanno effettuato più missioni spaziali? #### 
+#### Quali sono gli Stati che hanno effettuato piÃ¹ missioni spaziali? #### 
 
 
 n_comp = GlobalSpace %>% 
@@ -43,7 +43,7 @@ ggplot(dataLanci, aes(Stato, NumeroLanci, fill=Stato)) +
   geom_bar(stat = "identity") +
   coord_flip()
 
-#### Quali sono le Società che hanno effettuato più missioni? #### 
+#### Quali sono le SocietÃ  che hanno effettuato piÃ¹ missioni? #### 
 
 nLancicomp = GlobalSpace %>%  #conto il numero di lanci per ciascuna compagnia
   group_by(Company.Name,Companys.Country.of.Origin) %>%
@@ -288,7 +288,7 @@ gif = animate(p,nframes=350,fps = 7,width=800)
 
 gif
 
-### ANDAMENTO LANCI NEL TEMPO PER SOCIETÀ ###
+### ANDAMENTO LANCI NEL TEMPO PER SOCIETÃ€ ###
 
 GlobalSpace = read.csv("C:/Users/giaco/Desktop/NuovoProgettoDati/GlobalSpace/GlobalSpaceLaunches.csv")
 View(GlobalSpace)
@@ -413,7 +413,7 @@ data = c(state,private)
 barplot(data,names.arg = c("Missioni Statali","Missioni Private"), 
         col = c(rgb(0,0.796,0.859,0.8),rgb(0.902, 0, 0,0.6)))
 
-#### COM'È VARIATO IL NUMERO DI MISSIONI STATALI E PRIVATE NEL TEMPO? ####
+#### COM'Ãˆ VARIATO IL NUMERO DI MISSIONI STATALI E PRIVATE NEL TEMPO? ####
 
 g <- ggplot(GlobalSpace, aes(Year))  
 # Number of cars in each class:
@@ -421,124 +421,5 @@ g + geom_bar(aes(fill=Private.or.State.Run)) + labs(y= "Numero Missioni", x = "A
   scale_fill_manual(values=c(rgb(0.902, 0, 0,0.6),rgb(0,0.796,0.859,0.8)))
 
 
-
-datanew = dataAnn2 %>%
-  select(Missioni,names,Anno) %>%
-  group_by(Anno,Missioni,names) %>%
-  summarise(total = sum(Missioni)) %>%
-  mutate(cumtotal = cumsum(total))
-
-data2 = datanew %>%
-  group_by(Anno) %>%
-  arrange(Anno, -cumtotal) %>%
-  mutate(rank = 1:n())
-
-my_plot = data2 %>%
-  ggplot() + 
-  aes(xmin = 0,
-      xmax = cumtotal) +
-  aes(ymin = rank - 0.45,
-      ymax = rank + 0.45,
-      y = rank) +
-  facet_wrap(~Anno) +
-  geom_rect(alpha = .7) +
-  aes(fill = names) +
-  scale_fill_viridis_d(option = "brewer yellow-green-blue", #colore delle barre
-                       direction = -1) +
-  scale_x_continuous(
-    limits = c(-50,150), #limiti asse x del grafico
-    breaks = c(0,25,50,75,100,125)) +
-  geom_text(col = "darkblue", #nomi degli stati
-            hjust = "right",
-            aes(label = names),
-            x = -10) +
-  geom_text(col = "darkblue", #numero missioni
-            hjust = "right",
-            aes(label = paste(cumtotal), x = 12)) +
-  scale_y_reverse() +
-  labs(fill = NULL) +
-  ggtitle("Bar Race del numero di missioni spaziali dal 1957 al 2020") +
-  labs(x = "Missioni") + #titolo asse x
-  theme_classic()
-
-p = my_plot + facet_null() + 
-  geom_text(x =  75  , y = -6, #Indicatore dell'anno
-            family = "Times",
-            aes(label = as.character(Anno)),
-            size = 12, col = "darkorchid") +
-  aes(group = names) +
-  transition_time(Anno) +
-  transition_states(Anno,4,1)
-
-
-animate(p,nframes=350,fps = 8,width=800,end_pause = 10)
-
-#################################################################################
-
-GlobalSpace = read.csv("C:/Users/giaco/Desktop/NuovoProgettoDati/GlobalSpace/GlobalSpaceLaunches.csv")
-View(GlobalSpace)
-
-GlobalSpace = GlobalSpace %>% select(Company.Name,Year)
-
-Companies = GlobalSpace %>%  #conto il numero di lanci per ciascuna compagnia
-  group_by(Company.Name) %>%
-  summarise(count = n())
-
-View(Companies)
-
-Companies = Companies %>% filter(count >= 100)
-
-company = as.vector(Companies$Company.Name)
-
-ann = c(1957:2020)
-
-CompanyName = vector(mode="character")
-
-j = 1
-
-while(j<=1088){
-  for(i in 1:11){
-    for(k in 1:64){
-      CompanyName[j] = company[i]
-      j = j+1
-    }
-  }}    
-
-Missioni = vector(mode="numeric")
-j = 1
-
-while (j<=1088) {
-  for(i in 1:11){
-    for(k in 1:64){
-      Missioni[j] = nrow(GlobalSpace %>% filter(Company.Name == company[i],Year==ann[k]))
-      j=j+1
-    }}
-}
-
-datasetProva = data.frame(Missioni,CompanyName)
-View(datasetProva)
-
-Anno = c(1957:2020,1957:2020,1957:2020,1957:2020,1957:2020,1957:2020,1957:2020,1957:2020,1957:2020,1957:2020,1957:2020)
-
-dataAnn = data.frame(datasetProva,Anno)
-View(dataAnn)
-
-G20_plot = ggplot(dataAnn, aes(x=Anno,y=Missioni,
-                                group = CompanyName,
-                                color = CompanyName)) +
-  geom_line(size = 1) + ylab("") +
-  theme_classic() + ggtitle("Andamento Missioni per Compagnia") +
-  scale_y_continuous(breaks = pretty_breaks()) +
-  scale_x_continuous(breaks = pretty_breaks()) +
-  theme(legend.position = "bottom",legend.box = "vertical",
-        legend.title = element_blank(),
-        legend.text = element_text(size = 10))
-
-G20plot_anim = G20_plot + 
-  geom_point(size = 2) + 
-  transition_reveal(as.numeric(Anno))
-
-gif = animate(G20plot_anim,height=538,width=800,end_pause = 50)
-gif
 
  
