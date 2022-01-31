@@ -1,0 +1,614 @@
+---
+title: "Missioni spaziali 1957-2020"
+author: "Giacomo Zampieri"
+date: "2/02/2022"
+output:
+  ioslides_presentation: 
+    css: ./style.css
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache = FALSE, message = FALSE, warning = FALSE)
+```
+
+## Setup Dataset: 
+
+```{r, echo = FALSE}
+
+library(ggplot2)
+library(dplyr)
+library(corrplot)
+library(leaflet)
+library(ggpubr)
+library(plotly)
+library(tidyr)
+library(tidyverse)
+library(maps)
+library(mapproj)
+library(stringr)
+library(knitr)    
+library(ggplot2)  
+library(png)  
+
+```
+
+```{r, echo = TRUE}
+
+GlobalSpace = read.csv("C:/Users/giaco/Desktop/NuovoProgettoDati/GlobalSpace/GlobalSpaceLaunches.csv")
+
+GlobalSpace = GlobalSpace %>%
+  select(Company.Name,Detail,Status.Rocket,Status.Mission,
+         Country.of.Launch,Companys.Country.of.Origin,
+         Private.or.State.Run,Year)
+
+View(GlobalSpace)
+
+```
+
+In questo progetto ho utilizzato il dataset *Privatization of space*, contenente vari dati sulle missioni spaziali dal 1957 al 2020, trovato sul sito Kaggle.com 
+
+Il dataset è formato da 15 colonne, ma di queste ho preferito tenere per l'analisi solamente le seguenti:
+
+* Nome della Compagnia
+* Stato di provenienza della Compagnia
+* Nome del razzo utilizzato per la missione
+* Status del razzo (ancora in attività o ritirato)
+* Status della missione (successo, fallimento o parziale fallimento)
+* Stato in cui è stato lanciato il razzo
+* Missione statale o privata
+* Anno della missione
+
+## Quali sono gli Stati che hanno effettuato più missioni spaziali?
+
+Dal dataset estraggo il numero di missioni effettuate per ogni Stato e creo un nuova dataset contenente solamente le variabili di interesse:
+
+```{r, echo = TRUE}
+
+gb = select(GlobalSpace,c("Company.Name",
+                          "Companys.Country.of.Origin"))
+
+gb_count = gb %>% 
+  group_by(Companys.Country.of.Origin) %>%
+  summarise(count = n())
+
+View(gb_count)
+
+Stato = gb_count$Companys.Country.of.Origin
+NumeroLanci = gb_count$count
+
+dataLanci = data.frame(
+  Stato,
+  NumeroLanci
+)
+
+View(dataLanci)
+
+```
+
+Si nota subito dal grafico che anche questa volta la fetta più grande della torta è occupata dalla russia, mentre gli Stati Uniti sono secondi. Inoltre, dal grafico si può vedere che circa l' 80% di tutte le missioni spaziali effettuate negli ultimi 63 anni, sono state effettuate da solamente due Stati: Russia e USA. In terza posizione, invece, si trova la voce *Multi*, ovvero delle missioni effettuate da agenzie in cui collaborano più Stati, come l'Arianespace o l'ESA (Agenzia Spaziale Europea)
+
+Infine, come prima ho realizzato il grafico a barre riguardante il numero di lanci per ciascun Stato. Ho creato un nuovo semplice dataset, contenente due colonne: la prima formata dai vari Stati, e l'altra contenente il numero di missioni per ciascuno Stato:
+
+Infine creo il vero e proprio grafico a barre ordinato decrescentemente:
+
+```{r, echo = TRUE}   
+
+dataLanci$Stato <- factor(dataLanci$Stato,                                    
+                  levels = dataLanci$Stato[order(dataLanci$NumeroLanci)])
+ggplot(dataLanci, aes(Stato, NumeroLanci, fill=Stato)) +                                    
+  geom_bar(stat = "identity") +
+  coord_flip()
+
+```
+
+Da questo grafico è facilmente visibile che lo Stato che ha effettuato il maggior numero di missioni spaziali è la Russia, seguita da Stati Uniti e dalle Aziende formate da vari Stati che collaborano tra loro, come ad esempio l'ESA (Agenzia Spaziale Europea).
+L'Italia si posiziona a metà classifica, avendo effettuato 9 missioni spaziali, riguardanti sopratutto il lancio di satelliti per lo studio dell'atmosfera terrestre.
+
+## Quali sono le Compagnie che hanno effettuato più missioni?
+
+Dal dataset conto il numero di missioni per Compagnia, e seleziono solo le prime 15 ovvero quelle che hanno effettuato almeno 76 lanci:
+
+```{r, echo = TRUE}
+
+nLancicomp = GlobalSpace %>%  #conto il numero di lanci per ciascuna compagnia
+  group_by(Company.Name,Companys.Country.of.Origin) %>%
+  summarise(count = n())
+
+nLancicomp = nLancicomp %>% filter(count >= 76) 
+
+```
+
+Come effettuato precedentemente per gli Stati, costruisco il barplot del numero di lanci per le maggiori società spaziali
+
+```{r, echo = TRUE}
+
+Compagnia = nLancicomp$Company.Name
+NumeroLanci = nLancicomp$count
+Stato = nLancicomp$Companys.Country.of.Origin
+
+dataLanci = data.frame(
+  Compagnia,
+  NumeroLanci,
+  Stato
+)
+
+r = ggplot(data=dataLanci, aes(x=reorder(Compagnia,NumeroLanci),
+                               y=NumeroLanci,
+                               fill=Stato)) +
+  geom_bar(stat="identity") + xlab("Compagnie") +
+  geom_text(size = 3, position = position_stack(vjust = 0.5),
+            aes(label=NumeroLanci))
+
+r + coord_flip()
+
+```
+
+Da questo grafico è possiblie visualizzare quali sono le società che hanno effettuato più missioni tra il 1957 e il 2020. Si può vedere dal grafico che l'agenzia spaziale dell'Unione Sovietica *RVSN USSR* ha effettuato 1777 lanci, mentre la seconda compagnia che ha effettuato più missioni (l' *Arianespace*) ne ha effettuati solamente 279, seguita poi a poca distanza dalla cinese *CASIC*.
+
+## Confronto tra gli Stati che effettuano le missioni spaziali e gli Stati dove vengono lanciati i razzi
+
+Inizio col creare un nuovo dataset formato da una left join tra il dataset *worldtb* contenente le coordinate geografiche di tutte le regioni del mondo, e il dataset precedentemente creato, contenente il numero di lanci per ciascun Stato:
+
+```{r, echo = TRUE}  
+
+gb_count$Companys.Country.of.Origin[gb_count$Companys.Country.of.Origin 
+                                    == "England"] <- "UK"
+
+worldtb = map_data("world") %>%
+  as_tibble()
+
+StateMap = left_join(worldtb,gb_count,by=c("region" = 
+                                          "Companys.Country.of.Origin"))
+
+```
+
+Successivamente con il nuovo dataset creo la vera e propria mappa: 
+
+```{r, echo = TRUE}  
+StateMap %>%
+  ggplot(aes(long,lat,group=subregion)) +
+  geom_map(
+    aes(map_id=region),
+    map = StateMap,
+    color = "gray80", fill = "grey80", size = 0.9
+  ) +
+  geom_polygon(aes(group=group,fill=count), color="black") +
+  theme_minimal()+
+  labs(
+    title = "Stati che hanno effettuato missioni spaziali", x="", y=""
+    ,fill="") +
+  theme(
+    plot.title = element_text(size=20,face="bold",color="navyblue"),
+    legend.position = "right"
+  )
+
+```
+
+Come fatto per la precedente mappa, prima creo un nuovo dataset. Questa volta però utilizzo il dataset principale da cui estraggo la colonna contenente lo Stato da cui è partito il razzo:
+
+```{r, echo = TRUE}  
+
+countryLaunch = select(GlobalSpace,c("Country.of.Launch"))
+
+launchCount = countryLaunch %>% 
+  group_by(Country.of.Launch) %>%
+  summarise(count = n())
+
+worldtb = map_data("world") %>%
+  as_tibble()
+
+launchMap = left_join(worldtb,launchCount,
+                      by=c("region" = "Country.of.Launch"))
+
+```
+
+```{r, echo = TRUE}  
+
+launchMap %>%
+  ggplot(aes(long,lat,group=subregion)) +
+  geom_map(
+    aes(map_id=region),
+    map = launchMap,
+    color = "gray80", fill = "grey80", size = 0.9
+  ) +
+  geom_polygon(aes(group=group,fill=count), color="black") +
+  scale_fill_gradient2(low="royalblue1",mid="lightskyblue",
+                       high="navyblue",midpoint = 270) +
+  theme_minimal()+
+  labs(
+    title = "Stati dove vengono lanciati i razzi", 
+    x="", y="",fill="") +
+  theme(
+    plot.title = element_text(size=26,face="bold",color="navyblue"),
+    legend.position = "right"
+  )
+
+```
+
+Confrontando le due mappe, si vede che ci sono Stati che hanno effettuato missioni spaziali, ma che non sono presenti nella mappa riguardante gli Stati da cui vengono lanciati razzi. Questo perchè certe aziende preferiscono costruire piattaforme di lancio in altri stati, dove è più facile effettuare lanci di missili. Un' esempio è l'Italia che per le sue missioni spaziali utilizza una piattaforma di lancio in Kenya. Si può vedere che anche l'Australia e il Kazakistan non sono presenti nella mappa degli Stati che hanno effettuato delle missioni, mentre in questi Stati sono stati effettuati dei lanci. In particolare, in Australia effettuano dei lanci gli inglesi e gli americani, mentre in kazakistan la maggior parte dei lanci viene effettuata da società russe e ucraine.
+
+## Qual'è l'anno con il maggior numero di lanci?
+
+Per la creazione del grafico ho costruito una nuova tabella contenente il numero di lanci per ogni anno:
+
+```{r, echo = TRUE}
+
+nLaunch = GlobalSpace %>% 
+  group_by(Year) %>%
+  summarise(count = n())
+
+newDataL = data.frame(
+  Anno = nLaunch$Year,
+  NumeroLanci = nLaunch$count
+)
+
+```
+
+Successivamente realizzo il primo grafico: 
+
+```{r, echo = TRUE}
+
+ggplot(newDataL,aes(x = Anno, y = NumeroLanci)) + 
+  geom_point() + 
+  geom_smooth()
+
+```
+
+Dal grafico si può vedere che l'anno in cui sono state effettuate più missioni è il 1971 con quasi 120 lanci (119), seguito dal 2018 con pochi lanci in meno rispetto al 1971 (117). Inoltre, si vede che il numero di lanci è di molto diminuito tra gli anni '80 fino al 2010, dove le Compagnie spaziali hanno ricominciato a effettuare più missioni.
+
+## Andamento lanci nel tempo per Stato
+
+Per la creazione dell'animazione parto inizializzando le librerie e contando il numero di lanci totali per ciascuno Stato:
+
+```{r, echo = TRUE}
+
+library("readxl")
+library("scales")
+library("curl")
+library("png")
+library("gifski")
+library("gganimate")
+
+GlobalSpace = read.csv("C:/Users/giaco/Desktop/NuovoProgettoDati/GlobalSpace/GlobalSpaceLaunches.csv")
+
+GlobalSpace = GlobalSpace %>% select(Companys.Country.of.Origin,Year)
+
+Countries = GlobalSpace %>%  #conto il numero di lanci per ciascuna compagnia
+  group_by(Companys.Country.of.Origin) %>%
+  summarise(count = n())
+```
+
+Successivamente devo calcolare il numero di lanci annuali per ciascuno Stato:
+
+```{r,echo = TRUE}
+Countries = Countries[-c(1,12),]
+
+country = as.vector(Countries$Companys.Country.of.Origin)
+
+ann = c(1957:2020)
+ 
+names = vector(mode="character")
+
+j = 1
+while(j<=960){
+  for(i in 1:15){
+    for(k in 1:64){
+      names[j] = country[i]
+      j = j+1
+    }
+  }}    
+
+Missioni = vector(mode="numeric")
+j = 1
+
+while (j<=960) {
+  for(i in 1:15){
+    for(k in 1:64){
+      Missioni[j] = nrow(GlobalSpace %>% 
+            filter(Companys.Country.of.Origin == country[i],Year==ann[k]))
+      j=j+1
+    }}
+}
+
+datasetProva = data.frame(Missioni,names)
+
+Anno = c(1957:2020,1957:2020,1957:2020,1957:2020,1957:2020,1957:2020,1957:2020,1957:2020,1957:2020,1957:2020,1957:2020,1957:2020,1957:2020,1957:2020,1957:2020)
+
+dataAnn = data.frame(datasetProva,Anno)
+```
+
+Infine realizzo la vera e propria animazione:
+
+```{r,echo = TRUE}
+
+dataAnn$names[dataAnn$names== "Isreal"] <- "Israel"
+
+dataAnn = subset(dataAnn, Missioni != 0)
+
+dataAnn2 = dataAnn %>%  
+  filter(names == "China" | names == "Israel" | names == "USA" 
+         | names == "Italy" | names ==     "India" | names == "Japan"  
+         | names == "Germany" | names == "Russia")
+          
+G20_plot = ggplot(dataAnn2, aes(x=Anno,y=Missioni,
+                               group = names,
+                               color = names)) +
+  geom_line(size = 1) + ylab("") +
+  theme_classic() + ggtitle("Andamento Missioni per Stato") +
+  scale_y_continuous(breaks = pretty_breaks()) +
+  scale_x_continuous(breaks = pretty_breaks()) +
+  theme(legend.position = "bottom",legend.box = "vertical",
+        legend.title = element_blank(),
+        legend.text = element_text(size = 10))
+
+G20plot_anim = G20_plot + 
+  geom_point(size = 2) + 
+  transition_reveal(as.numeric(Anno))
+
+gif = animate(G20plot_anim,height=538,width=800,end_pause = 50)
+
+gif
+```
+
+Da questa animazione si visualizza meglio come fino alla metà degli anni '80 gli unici Stati che effettuavano missioni spaziali erano gli USA e la Russia. Solo dal 2000 in poi anche altri Stati come Cina e India hanno iniziato ad effettuare un numero sempre maggiore di missioni spaziali riuscendo anche, nel 2018, a superare gli Stati Uniti e la Russia.
+
+Per visualizzare meglio quali sono gli Stati in testa alla classifica del numero di lanci per anno, ho realizzato una bar chart race. 
+Per prima cosa ho creato un nuovo dataset contenente il numero di missioni annuali per ciascuno Stato, così da realizzare una classifica anno per anno del numero di lanci per Stato:
+
+```{r,echo=TRUE}
+datanew = dataAnn %>%
+  select(Missioni,names,Anno) %>%
+  group_by(Anno,Missioni,names) %>%
+  summarise(total = sum(Missioni)) %>%
+  mutate(cumtotal = cumsum(total))
+
+data2 = datanew %>%
+  group_by(Anno) %>%
+  arrange(Anno, -cumtotal) %>%
+  mutate(rank = 1:n())
+
+View(data2)
+
+```
+
+Infine ho realizzato la vera e propria animazione:
+
+```{r,echo=TRUE}
+my_plot = data2 %>%
+  ggplot() + 
+  aes(xmin = 0,
+      xmax = cumtotal) +
+  aes(ymin = rank - 0.45,
+      ymax = rank + 0.45,
+      y = rank) +
+  facet_wrap(~Anno) +
+  geom_rect(alpha = .7) +
+  aes(fill = names) +
+  scale_fill_viridis_d(option = "brewer yellow-green-blue",
+                       direction = -1) +
+  scale_x_continuous(
+    limits = c(-50,150), #limiti asse x del grafico
+    breaks = c(0,25,50,75,100,125)) +
+  geom_text(col = "darkblue", #nomi degli stati
+            hjust = "right",
+            aes(label = names),
+            x = -10) +
+  geom_text(col = "darkblue", #numero missioni
+            hjust = "right",
+            aes(label = paste(cumtotal), x = 12)) +
+  scale_y_reverse() +
+  labs(fill = NULL) +
+  ggtitle("Bar Race Chart del numero di missioni spaziali dal 1957 al 2020") +
+  labs(x = "Missioni") + #titolo asse x
+  theme_classic()
+
+p = my_plot + facet_null() + 
+  geom_text(x =  75  , y = -6, #Indicatore dell'anno
+            family = "Times",
+            aes(label = as.character(Anno)),
+            size = 12, col = "darkorchid") +
+  aes(group = names) +
+  transition_time(Anno) +
+  transition_states(Anno,4,5)
+
+
+gif = animate(p,nframes=350,fps = 7,width=800)
+
+gif
+
+```
+
+Anche da questo grafico è possibile visualizzare come la Russia mantiene il primato fino al 1993, l'anno dopo la caduta dell'Unione Sovietica. Inoltre si può vedere che l'Italia nel 1971 si è classificata terza, davanti a Giappone, Inghilterra e Cina. infine, nel 2020 il primo posto va agli USA, mentre in seconda posizione troviamo la Russia seguita dalla Cina.
+
+## Andamento lanci nel tempo per Società Spaziale
+
+Dopodichè mi sono chiesto quali sono le società che hanno effettuato più missioni in ciascun anno. Perciò ho creato un nuovo dataset contenente il numero di lanci annuali solamente per le principali Compagnie che negli anni hanno effettuato più lanci:
+
+```{r, echo = TRUE}
+GlobalSpace = read.csv("C:/Users/giaco/Desktop/NuovoProgettoDati/GlobalSpace/GlobalSpaceLaunches.csv")
+View(GlobalSpace)
+
+GlobalSpace = GlobalSpace %>% select(Company.Name,Year)
+
+Companies = GlobalSpace %>%  #conto il numero di lanci per ciascuna compagnia
+  group_by(Company.Name) %>%
+  summarise(count = n())
+
+View(Companies)
+
+Companies = Companies %>% filter(count >= 100)
+
+```
+
+Successivamente ho creato la vera e propria animazione: 
+
+```{r, echo = TRUE}
+company = as.vector(Companies$Company.Name)
+
+ann = c(1957:2020)
+
+CompanyName = vector(mode="character")
+
+j = 1
+
+while(j<=704){
+  for(i in 1:11){
+    for(k in 1:64){
+      CompanyName[j] = company[i]
+      j = j+1
+    }
+  }}    
+
+Missioni = vector(mode="numeric")
+j = 1
+
+while(j<=704) {
+  for(i in 1:11){
+    for(k in 1:64){
+      Missioni[j] = nrow(GlobalSpace %>% 
+                filter(Company.Name == company[i],Year==ann[k]))
+      j=j+1
+    }}
+}
+
+datasetProva = data.frame(Missioni,CompanyName)
+
+Anno = c(1957:2020,1957:2020,1957:2020,1957:2020,1957:2020,
+         1957:2020,1957:2020,1957:2020,1957:2020,1957:2020,
+         1957:2020)
+
+dataAnn = data.frame(datasetProva,Anno)
+
+G20_plot = ggplot(dataAnn, aes(x=Anno,y=Missioni,
+                                group = CompanyName,
+                                color = CompanyName)) +
+  geom_line(size = 1) + ylab("") +
+  theme_classic() + ggtitle("Andamento Missioni per Compagnia") +
+  scale_y_continuous(breaks = pretty_breaks()) +
+  scale_x_continuous(breaks = pretty_breaks()) +
+  theme(legend.position = "bottom",legend.box = "vertical",
+        legend.title = element_blank(),
+        legend.text = element_text(size = 10))
+
+G20plot_anim = G20_plot + 
+  geom_point(size = 2) + 
+  transition_reveal(as.numeric(Anno))
+
+gif = animate(G20plot_anim,height=538,width=800,end_pause = 50)
+gif
+
+```
+
+È possibile notare che dalla metà degli anni '60 fino agli anni '90 la compagnia russa RVSN USSR era la Compagnia che effettuava più missioni spaziali, seguita poi dalla NASA e dalla General Dynamics. Negli ultimi anni, invece, è l'agenzia spaziale cinese CASIC che effettua maggiormente missioni spaziali.
+
+## Quante di queste missioni sono state un successo e quante un fallimento?
+
+Per rispondere a questa domanda utilizzo un ciclo for per contare il numero di successi, fallimenti e parziali fallimenti di ogni compagnia: 
+
+```{r, echo = TRUE}  
+GlobalSpace = read.csv("C:/Users/giaco/Desktop/NuovoProgettoDati/GlobalSpace/GlobalSpaceLaunches.csv")
+
+statusData = select(GlobalSpace,c("Status.Mission"))
+
+status = as.vector(statusData$Status.Mission)
+
+success = 0
+partial = 0
+failure = 0
+
+for(i in 1:4324){
+  
+  if(status[i] == "Success"){
+    success = success + 1
+  } else if(status[i] == "Failure"){
+    failure = failure + 1
+  } else{
+    partial = partial + 1
+  }
+}
+
+```
+
+Successivamente costruisco un nuovo dataframe contenente il numero di successi e insuccessi di tutte lo missioni e con questo creo il barplot: 
+
+```{r, echo = TRUE}
+
+
+dataStatus2 = data.frame(status = c("Successi","Fallimenti",
+                                    "Fallimenti Parziali"), 
+                        vals = c(success,failure,partial))
+
+ggplot(dataStatus2, aes(x = status, y = vals, fill= status,
+                        label = vals)) +
+  geom_bar(stat = "identity") +
+  geom_text(size = 3, position = position_stack(vjust = 0.5)) +
+  scale_fill_manual(values=c("red3", "royalblue1", "springgreen3")) + 
+  labs(y= "Numero Missioni", x = "Status")
+
+```
+
+Con questo grafico è possibile verificare che su 4324 missioni spaziali registrate nel dataset, ben 3879 sono state un successo, mentre solamente 339 sono state un fallimento.
+
+## Quante di queste missioni sono fatte da agenize statali e quante da privati?
+
+```{r, echo = TRUE}
+
+
+GlobalSpace = read.csv("C:/Users/giaco/Desktop/NuovoProgettoDati/GlobalSpace/GlobalSpaceLaunches.csv")
+
+state = 0
+private = 0
+
+run = as.vector(GlobalSpace$Private.or.State.Run)
+
+for(i in 1:4324){ 
+  if(run[i] == "S"){
+    state = state + 1
+  } else{
+    private = private + 1
+  }
+}
+
+data = c(state,private)
+
+barplot(data,names.arg = c("Missioni Statali","Missioni Private"), 
+        col = c(rgb(0,0.796,0.859,0.8),rgb(0.902, 0, 0,0.6)))
+
+```
+
+Si può vedere dal grafico a barre, che il numero di missioni statali è molto superiore a quello delle missioni private. Questo perchè fino agli anni '90, le compagnie spaziali erano di proprietà dello Stato, come si vede nel seguente grafico: 
+
+## Com'è variato il numero di missioni statali e private nel tempo?
+
+```{r, echo = FALSE} 
+
+g <- ggplot(GlobalSpace, aes(Year))  
+# Number of cars in each class:
+g + geom_bar(aes(fill=Private.or.State.Run)) + labs(y= "Numero Missioni", x = "Anno") +
+  scale_fill_manual(values=c(rgb(0.902, 0, 0,0.6),rgb(0,0.796,0.859,0.8)))
+
+```
+
+Fino al 1990 la maggioranza delle missioni spaziali era guidata da Compagnie statali come l'Aviazione USA e la Società Spaziale dell' Unione Sovietica. Dopo gli anni '90 il numero di missioni spaziali private è stato sempre maggiore rispetto a quello delle missioni statali, mentre negli ultimi anni le Compagnie statali hanno ricominciato ad effettuare molti lanci, arrivando ad una parità con le Agenzie private.
+
+## Conclusioni
+
+- Le Società che hanno effettuato più missioni negli ultimi 63 anni sono la russa RVSN USSR e la francese Arianespace, che collabora anche    con altri Stati
+
+- Gli Stati che hanno effettuato più lanci spaziali sono Russia, Stati Uniti e Cina
+
+- L'anno in cui sono stati effettuati più lanci è stato il 1971, seguito dal 2018 e 1977
+
+- Dagli anni '80 il numero di missioni spaziali è sempre stato in calo, fino al 2010 dove la curva del numero di lanci è salita
+
+- Fino agli anni '90 Russia e Stati Uniti erano praticamente gli unici Stati ad effettuare missioni spaziali, mentre in questi ultimi anni   la   Cina è lo Stato con il maggior numero di missioni spaziali
+
+- L' 89% di tutte le missioni è stata un successo, mentre solamente il 7.8% è stata un fallimento
+
+- L'Arianespace oltre ad essere una tra le Agenzie spaziali che hanno effettuato più lanci, è anche una tra quelle che hanno la percentuale   di successi più alta, mentre la RVSN e la CASIC si posizionano a metà classifica
+
+- Il numero di missioni statali è superiore a quello delle missioni private
+
+- Negli anni il numero di lanci di compagnie statali è diminuito, risalendo però dal 2016
